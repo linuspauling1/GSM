@@ -38,20 +38,9 @@ def transceive(message):
     with serial.Serial('/dev/ttyS0', baudrate=115200, timeout=3) as ser:
         message = gsm[message] + '\n'
         ser.write(message.encode())
-        response = b''
-        while True:
-            data = ser.read(1)
-            if data:
-                response += data
-                if response[-4:] == b'\r\nOK':
-                    break
-                elif response[-7:] == b'\r\nERROR':
-                    break
-        print(response.decode())
         ser.close()
 
 transceive('check_sms')
-transceive('send_sms')
-transceive('dial')
-sleep(5)
-transceive('hangup')
+while True:
+    transceive('send_sms')
+    sleep(2)
