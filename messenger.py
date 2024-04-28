@@ -64,16 +64,19 @@ class GSM:
             val = '0'
         self.transceive('AT+CFUN=' + val + '\n')
         while True:
-            if self.ser.read_until().decode()[:-2] == 'OK':
+            answer = self.receive()
+            if answer == '+CPIN: SIM PIN':
+                print('Modem powered!')
+            elif answer == 'OK':
                 break
 
     def unlock_sim(self, pin):
         self.transceive('AT+CPIN=' + pin + '\n')
         while True:
-            tmp = self.ser.read_until().decode()[:-2]
-            if tmp == 'ERROR':
+            response = self.receive()
+            if response == 'ERROR':
                 raise Exception('Incorrect PIN!')
-            elif tmp == 'OK':
+            elif response == 'OK':
                 print('SIM activated!')
                 break
 
@@ -85,13 +88,14 @@ def init(g, pin):
     if g.receive() != '+CPIN: READY':
         g.unlock_enable(True)
         g.unlock_sim(pin)
+    sleep(3)
     g.transceive(gsm['check_sms'])
     while True:
-        tmp = g.receive()
-        if tmp == 'ERROR':
-            print('Cannot send SMS!') #why does it enter this branch?
+        response = g.receive()
+        if response == 'ERROR':
+            print('Cannot send SMS!')
             break
-        elif tmp == 'OK':
+        elif response == 'OK':
             print('Ready for sending SMS!')
             break
 
