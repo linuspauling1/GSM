@@ -5,19 +5,22 @@ mutex_lock = Lock()
 
 def thread_1():
     print("Thread 1: Starting")
-    for i in range(50):
+    while True:
         try:
+            x = input('Mere')
+            print('Thread 1: ' + x)
             mutex_lock.acquire()
-            print('Thread 1: ' + str(i))
+            sleep(1)
         finally:
             mutex_lock.release()
 
 def thread_2():
     print('Thread 2: Starting')
-    for i in range(50):
+    while True:
         try:
             mutex_lock.acquire()
-            print('Thread 2: ' + str(i))
+            print('Thread 2: ')
+            sleep(1)
         finally:
             mutex_lock.release()
 
