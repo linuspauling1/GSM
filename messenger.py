@@ -1,9 +1,7 @@
 import serial
 from time import sleep
-from threading import Thread, Lock
 from gotify import Gotify
 
-lock = Lock()
 ctrlZ = chr(26)
 
 gsm = {
@@ -84,6 +82,7 @@ class GSM:
     def wait(self, delay):
         self.transceive('WAIT=' + delay + '\n')
 
+
 def init(g, pin):
     g.transceive(gsm['ready'])
     if g.receive() != '+CPIN: READY':
@@ -100,18 +99,18 @@ def init(g, pin):
             print('Ready for sending SMS!')
             break
 
+
 def serial_spit():
     pin = '0000'
     number = '0744604883'
 
     with GSM() as g:
-        with lock:
-            cmd = ('If you would like to set the PIN press nothing but the return key.\n')
-            if cmd == '':
-                pin = input('Please, introduce the PIN.\n')
-            init(g, pin)
-            
-        while True:
+        cmd = input('If you would like to set the PIN press nothing but the return key.\n')
+        if cmd == '':
+            pin = input('Please, introduce the PIN.\n')
+        init(g, pin)
+
+        while True:    
             cmd = input(f'''Introduce the command:
                         c - change the phone number (now it is {number} )
                         d - dial
@@ -120,19 +119,17 @@ def serial_spit():
             if cmd == 'c':
                 number = input('Please, introduce the phone number you would like to use from now on.\n')
             elif cmd == 'd':
-                with lock:
-                    g.dial(number)
+                g.dial(number)
             elif cmd == 'h':
-                with lock:
-                    g.transceive(gsm['hangup'])
+                g.transceive(gsm['hangup'])
             elif cmd == 'm':
                 txt = input('Please, introduce the next message.\n')
                 if txt == '' :
                     continue
-                with lock:
-                    g.send_sms(number, txt)
+                g.send_sms(number, txt)
             else:
                 print('Command not recognized')
+    
 
 def serial_digest():
     last_dialing_number = 0
@@ -142,58 +139,46 @@ def serial_digest():
             app_token='A_8APqsvE8C5Rom',
     )
     
-    with serial.Serial('/dev/ttyS0', baudrate=115200) as ser:
+    with GSM() as g:
         while True:
-            with lock:
+            call_status = ''
+            data = g.receive()
 
-                call_status = ''
-                data = ser.read_until().decode()
+            if data == 'RING':
+                call_status='Ring'
+                g.transceive('AT+CLCC\r\n')
+                data = g.receive()
+                if data.startswith('+CLCC'):
+                    for x in data[len('+CLCC: '):-len('\r\n')].split(','):
+                        if x.startswith('"') and x.endswith('"'):
+                            last_dialing_number = x.strip('"')
+                gotify.create_message(
+                    message=call_status,
+                    title=last_dialing_number,
+                )
+                print(last_dialing_number)
+                print(call_status)
+                print()
+            elif data == 'NO CARRIER':
+                call_status='Hang'
+                gotify.create_message(
+                    message=call_status,
+                    title=last_dialing_number,
+                )
+                print(last_dialing_number)
+                print(call_status)
+                print()
+            elif data.startswith('+CMT'):
+                [number,_,date,hour] = [x.strip('"') for x in data[len('+CMT: '):-len('\r\n')].split(',')]
+                message = g.receive()
+                message += '\n' + date + ' ' + hour
+                title = number[2:]
+                print(title)
+                print(message)
+                print()
+                gotify.create_message(
+                    message=message,
+                    title=title,
+                )
 
-                if data == 'RING\r\n':
-                    call_status='Ring'
-                    ser.write(b'AT+CLCC\r\n')
-                    ser.read_until()
-                    data = ser.read_until().decode()
-                    if data.startswith('+CLCC'):
-                        for x in data[len('+CLCC: '):-len('\r\n')].split(','):
-                            if x.startswith('"') and x.endswith('"'):
-                                last_dialing_number = x.strip('"')
-                    gotify.create_message(
-                        message=call_status,
-                        title=last_dialing_number,
-                    )
-                    print(last_dialing_number)
-                    print(call_status)
-                    print()
-                elif data == 'NO CARRIER\r\n':
-                    call_status='Hang'
-                    gotify.create_message(
-                        message=call_status,
-                        title=last_dialing_number,
-                    )
-                    print(last_dialing_number)
-                    print(call_status)
-                    print()
-                elif data.startswith('+CMT'):
-                    [number,_,date,hour] = [x.strip('"') for x in data[len('+CMT: '):-len('\r\n')].split(',')]
-                    message = ser.read_until(b'\r\n').decode()[:-2]
-                    message += '\n' + date + ' ' + hour
-                    title = number[2:]
-                    print(title)
-                    print(message)
-                    print()
-                    gotify.create_message(
-                        message=message,
-                        title=title,
-                    )
-
-
-if __name__ == "__main__":
-  thread1 = Thread(target=serial_spit)
-  thread2 = Thread(target=serial_digest)
-
-  thread1.start()
-  thread2.start()
-
-  thread1.join()
-  thread2.join()
+serial_digest()
