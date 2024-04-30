@@ -1,7 +1,9 @@
 import serial
 from time import sleep
+from threading import Thread, Lock
 from gotify import Gotify
 
+lock = Lock()
 ctrlZ = chr(26)
 
 gsm = {
@@ -31,8 +33,8 @@ for key, value in gsm.items():
 
 
 class GSM:
-    def __init__(self, port='/dev/ttyS0', baudrate=115200):
-        self.ser = serial.Serial(port, baudrate)
+    def __init__(self, port='/dev/ttyS0', baudrate=115200, timeout=None):
+        self.ser = serial.Serial(port, baudrate, timeout=timeout)
     
     def __enter__(self):
         return self
@@ -108,7 +110,8 @@ def serial_spit():
         cmd = input('If you would like to set the PIN press nothing but the return key.\n')
         if cmd == '':
             pin = input('Please, introduce the PIN.\n')
-        init(g, pin)
+        with lock:
+            init(g, pin)
 
         while True:    
             cmd = input(f'''Introduce the command:
@@ -119,14 +122,17 @@ def serial_spit():
             if cmd == 'c':
                 number = input('Please, introduce the phone number you would like to use from now on.\n')
             elif cmd == 'd':
-                g.dial(number)
+                with lock:
+                    g.dial(number)
             elif cmd == 'h':
-                g.transceive(gsm['hangup'])
+                with lock:
+                    g.transceive(gsm['hangup'])
             elif cmd == 'm':
                 txt = input('Please, introduce the next message.\n')
                 if txt == '' :
                     continue
-                g.send_sms(number, txt)
+                with lock:
+                    g.send_sms(number, txt)
             else:
                 print('Command not recognized')
     
@@ -139,15 +145,17 @@ def serial_digest():
             app_token='A_8APqsvE8C5Rom',
     )
     
-    with GSM() as g:
+    with GSM(timeout=0.5) as g:
         while True:
             call_status = ''
-            data = g.receive()
+            with lock:
+                data = g.receive()
 
             if data == 'RING':
                 call_status='Ring'
-                g.transceive('AT+CLCC\r\n')
-                data = g.receive()
+                with lock:
+                    g.transceive('AT+CLCC\r\n')
+                    data = g.receive()
                 if data.startswith('+CLCC'):
                     for x in data[len('+CLCC: '):-len('\r\n')].split(','):
                         if x.startswith('"') and x.endswith('"'):
@@ -170,7 +178,8 @@ def serial_digest():
                 print()
             elif data.startswith('+CMT'):
                 [number,_,date,hour] = [x.strip('"') for x in data[len('+CMT: '):-len('\r\n')].split(',')]
-                message = g.receive()
+                with lock:
+                    message = g.receive()
                 message += '\n' + date + ' ' + hour
                 title = number[2:]
                 print(title)
@@ -180,5 +189,9 @@ def serial_digest():
                     message=message,
                     title=title,
                 )
+            sleep(1)
 
-serial_digest()
+if __name__ == '__main__':
+    Thread(target=serial_spit).start()
+    Thread(target=serial_digest).start()
+    
