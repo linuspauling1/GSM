@@ -3,7 +3,6 @@ from time import sleep
 from threading import Thread, Lock
 from gotify import Gotify
 
-lock = Lock()
 ctrlZ = chr(26)
 
 gsm = {
@@ -33,8 +32,9 @@ for key, value in gsm.items():
 
 
 class GSM:
-    def __init__(self, port='/dev/ttyS0', baudrate=115200, timeout=None):
+    def __init__(self, lock, port='/dev/ttyS0', baudrate=115200, timeout=None):
         self.ser = serial.Serial(port, baudrate, timeout=timeout)
+        self.lock = lock
     
     def __enter__(self):
         return self
@@ -43,11 +43,13 @@ class GSM:
         self.ser.close()
 
     def transceive(self, message):
-        self.ser.write(message.encode())
-        self.ser.read_until()
+        with self.lock:
+            self.ser.write(message.encode())
+            self.ser.read_until()
 
     def receive(self):
-        return self.ser.read_until().decode()[:-2]
+        with self.lock:
+            return self.ser.read_until().decode()[:-2]
 
     def auto_answer(self, accept):
         self.transceive('ATS0=' + accept + '\n')
@@ -102,16 +104,15 @@ def init(g, pin):
             break
 
 
-def serial_spit():
+def serial_spit(lock):
     pin = '0000'
     number = '0744604883'
 
-    with GSM() as g:
-        cmd = input('If you would like to set the PIN press nothing but the return key.\n')
-        if cmd == '':
+    with GSM(lock=lock) as g:
+        cmd = input('If you would like to set the PIN type (with caps) SET.\n')
+        if cmd == 'SET':
             pin = input('Please, introduce the PIN.\n')
-        with lock:
-            init(g, pin)
+        init(g, pin)
 
         while True:    
             cmd = input(f'''Introduce the command:
@@ -122,22 +123,19 @@ def serial_spit():
             if cmd == 'c':
                 number = input('Please, introduce the phone number you would like to use from now on.\n')
             elif cmd == 'd':
-                with lock:
-                    g.dial(number)
+                g.dial(number)
             elif cmd == 'h':
-                with lock:
-                    g.transceive(gsm['hangup'])
+                g.transceive(gsm['hangup'])
             elif cmd == 'm':
                 txt = input('Please, introduce the next message.\n')
                 if txt == '' :
                     continue
-                with lock:
-                    g.send_sms(number, txt)
+                g.send_sms(number, txt)
             else:
                 print('Command not recognized')
     
 
-def serial_digest():
+def serial_digest(lock):
     last_dialing_number = 0
 
     gotify = Gotify(
@@ -145,17 +143,15 @@ def serial_digest():
             app_token='A_8APqsvE8C5Rom',
     )
     
-    with GSM(timeout=0.5) as g:
+    with GSM(lock=lock, timeout=0.4) as g:
         while True:
             call_status = ''
-            with lock:
-                data = g.receive()
+            data = g.receive()
 
             if data == 'RING':
                 call_status='Ring'
-                with lock:
-                    g.transceive('AT+CLCC\r\n')
-                    data = g.receive()
+                g.transceive('AT+CLCC\r\n')
+                data = g.receive()
                 if data.startswith('+CLCC'):
                     for x in data[len('+CLCC: '):-len('\r\n')].split(','):
                         if x.startswith('"') and x.endswith('"'):
@@ -178,8 +174,7 @@ def serial_digest():
                 print()
             elif data.startswith('+CMT'):
                 [number,_,date,hour] = [x.strip('"') for x in data[len('+CMT: '):-len('\r\n')].split(',')]
-                with lock:
-                    message = g.receive()
+                message = g.receive()
                 message += '\n' + date + ' ' + hour
                 title = number[2:]
                 print(title)
@@ -189,9 +184,10 @@ def serial_digest():
                     message=message,
                     title=title,
                 )
-            sleep(1)
+            sleep(.1)
 
 if __name__ == '__main__':
-    Thread(target=serial_spit).start()
-    Thread(target=serial_digest).start()
+    serial_lock = Lock()
+    Thread(target=serial_spit, args=(serial_lock,)).start()
+    Thread(target=serial_digest, args=(serial_lock,)).start()
     
