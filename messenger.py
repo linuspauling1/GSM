@@ -39,7 +39,7 @@ class GSM:
     def __enter__(self):
         return self
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self):
         self.ser.close()
 
     def transceive(self, message):
@@ -50,6 +50,9 @@ class GSM:
     def receive(self):
         with self.lock:
             return self.ser.read_until().decode()[:-2]
+
+    def data_available(self):
+        return self.ser.in_waiting > 0
 
     def auto_answer(self, accept):
         self.transceive('ATS0=' + accept + '\n')
@@ -116,7 +119,7 @@ def serial_spit(lock):
 
         while True:    
             cmd = input(f'''Introduce the command:
-                        c - change the phone number (now it is {number} )
+                        c - change the phone number (now it is {number})
                         d - dial
                         h - hangup
                         m - message\n\n''')
@@ -143,9 +146,12 @@ def serial_digest(lock):
             app_token='A_8APqsvE8C5Rom',
     )
     
-    with GSM(lock=lock, timeout=0.4) as g:
+    with GSM(lock=lock) as g:
         while True:
             call_status = ''
+            if not g.data_available():
+                sleep(.1)
+                continue
             data = g.receive()
 
             if data == 'RING':
@@ -184,10 +190,9 @@ def serial_digest(lock):
                     message=message,
                     title=title,
                 )
-            sleep(.1)
+
 
 if __name__ == '__main__':
     serial_lock = Lock()
-    Thread(target=serial_spit, args=(serial_lock,)).start()
+    Thread(target=serial_spit, args=(serial_lock,), daemon=True).start()
     Thread(target=serial_digest, args=(serial_lock,)).start()
-    
