@@ -39,7 +39,7 @@ class GSM:
     def __enter__(self):
         return self
     
-    def __exit__(self):
+    def __exit__(self, exc_type, exc_val, exc_tb):
         self.ser.close()
 
     def transceive(self, message):
@@ -108,9 +108,9 @@ def init(g, pin):
 
 
 def serial_spit(lock):
+    global dial_number
+    dial_number = '0757100883'
     pin = '0000'
-    number = '0744604883'
-
     with GSM(lock=lock) as g:
         cmd = input('If you would like to set the PIN type (with caps) SET.\n')
         if cmd == 'SET':
@@ -118,21 +118,21 @@ def serial_spit(lock):
         init(g, pin)
         while True:    
             cmd = input(f'''\nIntroduce the command:
-                        c - change the phone number (now it is {number})
+                        c - change the phone number (now it is {dial_number})
                         d - dial
                         h - hangup
                         m - message\n\n''')
             if cmd == 'c':
-                number = input('Please, introduce the phone number you would like to use from now on.\n')
+                dial_number = input('Please, introduce the phone number you would like to use from now on.\n')
             elif cmd == 'd':
-                g.dial(number)
+                g.dial(dial_number)
             elif cmd == 'h':
                 g.transceive(gsm['hangup'])
             elif cmd == 'm':
                 txt = input('Please, introduce the next message.\n')
                 if txt == '' :
                     continue
-                g.send_sms(number, txt)
+                g.send_sms(dial_number, txt)
             else:
                 print('Command not recognized')
     
@@ -167,6 +167,8 @@ def serial_digest(lock):
                 print()
             elif data == 'NO CARRIER':
                 call_status='Hang'
+                if last_dialing_number == 0:
+                    last_dialing_number = dial_number
                 gotify.create_message(
                     message=call_status,
                     title=last_dialing_number,
@@ -174,6 +176,7 @@ def serial_digest(lock):
                 print(last_dialing_number)
                 print(call_status)
                 print()
+                last_dialing_number = 0
             elif data.startswith('+CMT'):
                 [number,_,date,hour] = [x.strip('"') for x in data[len('+CMT: '):].split(',')]
                 message = g.receive()
@@ -189,6 +192,7 @@ def serial_digest(lock):
 
 
 if __name__ == '__main__':
+    global dial_number
     serial_lock = Lock()
     Thread(target=serial_spit, args=(serial_lock,), daemon=True).start()
     Thread(target=serial_digest, args=(serial_lock,)).start()
