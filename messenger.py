@@ -144,7 +144,7 @@ def serial_digest(lock):
             app_token='A_8APqsvE8C5Rom',
     )
 
-    with GSM(lock=lock) as g:
+    with GSM(lock=lock, timeout=.1) as g:
         while True:
             if g.data_not_available():
                 continue
