@@ -155,7 +155,7 @@ def serial_digest(lock):
                 g.transceive('AT+CLCC\r\n')
                 data = g.receive()
                 if data.startswith('+CLCC'):
-                    for x in data[len('+CLCC: '):-len('\r\n')].split(','):
+                    for x in data[len('+CLCC: '):].split(','):
                         if x.startswith('"') and x.endswith('"'):
                             last_dialing_number = x.strip('"')
                 gotify.create_message(
@@ -177,6 +177,15 @@ def serial_digest(lock):
                 print(call_status)
                 print()
                 last_dialing_number = 0
+            elif data == 'BUSY':
+                call_status='Busy'
+                gotify.create_message(
+                    message=call_status,
+                    title=dial_number,
+                )
+                print(dial_number)
+                print(call_status)
+                print()
             elif data.startswith('+CMT'):
                 [number,_,date,hour] = [x.strip('"') for x in data[len('+CMT: '):].split(',')]
                 message = g.receive()
