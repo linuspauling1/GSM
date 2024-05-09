@@ -51,8 +51,8 @@ class GSM:
         with self.lock:
             return self.ser.read_until().decode()[:-2]
 
-    def data_available(self):
-        return self.ser.in_waiting > 0
+    def data_not_available(self):
+        return self.ser.in_waiting < 2
 
     def auto_answer(self, accept):
         self.transceive('ATS0=' + accept + '\n')
@@ -116,9 +116,8 @@ def serial_spit(lock):
         if cmd == 'SET':
             pin = input('Please, introduce the PIN.\n')
         init(g, pin)
-
         while True:    
-            cmd = input(f'''Introduce the command:
+            cmd = input(f'''\nIntroduce the command:
                         c - change the phone number (now it is {number})
                         d - dial
                         h - hangup
@@ -140,20 +139,17 @@ def serial_spit(lock):
 
 def serial_digest(lock):
     last_dialing_number = 0
-
     gotify = Gotify(
             base_url='http://localhost:80',
             app_token='A_8APqsvE8C5Rom',
     )
-    
+
     with GSM(lock=lock) as g:
         while True:
-            call_status = ''
-            if not g.data_available():
-                sleep(.1)
+            if g.data_not_available():
                 continue
             data = g.receive()
-
+            call_status = ''
             if data == 'RING':
                 call_status='Ring'
                 g.transceive('AT+CLCC\r\n')
@@ -179,17 +175,17 @@ def serial_digest(lock):
                 print(call_status)
                 print()
             elif data.startswith('+CMT'):
-                [number,_,date,hour] = [x.strip('"') for x in data[len('+CMT: '):-len('\r\n')].split(',')]
+                [number,_,date,hour] = [x.strip('"') for x in data[len('+CMT: '):].split(',')]
                 message = g.receive()
                 message += '\n' + date + ' ' + hour
                 title = number[2:]
-                print(title)
-                print(message)
-                print()
                 gotify.create_message(
                     message=message,
                     title=title,
                 )
+                print(title)
+                print(message)
+                print()
 
 
 if __name__ == '__main__':
