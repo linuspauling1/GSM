@@ -158,6 +158,7 @@ def serial_digest(lock):
                     for x in data[len('+CLCC: '):].split(','):
                         if x.startswith('"') and x.endswith('"'):
                             last_dialing_number = x.strip('"')
+                            break
                 gotify.create_message(
                     message=call_status,
                     title=last_dialing_number,
