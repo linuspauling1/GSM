@@ -4,60 +4,18 @@ TODO: factor serial availability check
 TODO: RAII wrapper for ser
 TODO: unicode/emoji SMS support
 TODO: create phone agenda?
-TODO: structure methods in logic groups
 '''
 
 from time import sleep
+from timestamp import TimeStamp
+from sms import SMS
+from batterystatus import BatteryStatus
+from gsmregdata import GSMRegData
 import serial
 import re
 
 ctrlZ = chr(26)
 sms_max_length = 160
-
-
-class DateTime:
-    def __init__(self,day:str,month:str,year:str,hour:str,minute:str,second:str,gmt:str):
-        for i in day,month,year,hour,minute,second:
-            if re.search('^[0-9]{2}$',i) is None:
-                raise TypeError('First 6 argument must be 2-digit strings')
-        if re.search('^[+|-][0-9]{2}$',gmt) is None:
-            raise TypeError('GMT must be a string with the format: <+/-><digit><digit>' + gmt)
-        self.day = day
-        self.month = month
-        self.year = year
-        self.hour = hour
-        self.minute = minute
-        self.second = second
-        self.gmt = gmt
-
-    def __str__(self):
-        return f'''\
-Date (dd/mm/yy): {self.day}/{self.month}/{self.year}
-Time (hh/mm/ss): {self.hour}:{self.minute}:{self.second}, GMT: {self.gmt}\
-        '''
-
-class SMS:
-    def __init__(self,number:str,date_time:DateTime,message:str):
-        self.number = number
-        self.date_time = date_time
-        self.message = message
-
-    def __str__(self):
-        return f'From: {self.number}\n{str(self.date_time)}\n{self.message}'
-
-
-class BatteryStatus:
-    def __init__(self,voltage:str,level:str,status:str):
-        for i in voltage, level:
-            if re.search('^[0-9]+$',i) is None:
-                raise TypeError('First two arguments must be 2-digit strings')
-        self.voltage = voltage
-        self.level = level
-        self.status = status
-
-    def __str__(self):
-        return f'Voltage: {self.voltage}mV\nLevel  : {self.level}%\nStatus : {self.status}'
-
 
 class SIM800L:
     def __init__(self, lock=None, port = '/dev/ttyS0',baudrate=115200, timeout=.2): #TODO: implement thread locks
@@ -131,7 +89,7 @@ class SIM800L:
                     number = number.strip('"')
                     return number
             else:
-                sleep(.1)
+                sleep(.1) # let the other threads alive
         return None
 
     def is_show_sms_params(self):
@@ -150,7 +108,7 @@ class SIM800L:
             self.transmit('AT+CSDH=0')
 
     def show_ser_async_data(self): #TODO: rewrite to return something
-        if not self.is_show_sms_params(): #this will be moved in an init method
+        if not self.is_show_sms_params(): # TODO: moved in an init method
             self.set_show_sms_params()
         call_status_map = {
             'RING': 'Ringing',
@@ -173,17 +131,17 @@ class SIM800L:
                     y,m,d = re.findall('[0-9]{2}',date)
                     hr,min,sec,gmt = re.findall('[+]?[0-9]{2}',time)
                     msg = self.ser.read(no_chars).decode()
-                    print(SMS(number,DateTime(d,m,y,hr,min,sec,gmt),msg))
+                    print(SMS(number,TimeStamp(d,m,y,hr,min,sec,gmt),msg))
             else:
-                sleep(.1)
+                sleep(.1) # let the other threads alive
 
     def get_battery_level(self):
-        status_dict = {'0':'not charging', '1':'charging', '2':'charing finished'}
+        status_map = {'0':'not charging', '1':'charging', '2':'charing finished'}
         self.transmit('AT+CBC')
         resp = self.receive()
         if resp.startswith('+CBC'):
             status, level, voltage = re.findall('[0-9]+',resp)
-            return BatteryStatus(voltage,level,status_dict[status])
+            return BatteryStatus(voltage,level,status_map[status])
         else:
             raise Exception('+CBC Inappropiate response: ' + resp)
             
@@ -225,7 +183,7 @@ class SIM800L:
                     elif txt == 'ERROR':
                         raise Exception('Incorrect PIN!')
                 else:
-                    sleep(.1)
+                    sleep(.1) # let the other threads alive
         else:
             print('Sim already unlocked')
             
@@ -250,7 +208,7 @@ class SIM800L:
                         resp += self.receive()
                     break
             else:
-                sleep(.1) # let other threads alive
+                sleep(.1) # let the other threads alive
         ops_det = re.findall('\([0-9],"[^)]+","[^)]+","[^)]+"\)',resp)
         ops = []
         for op_det in ops_det:
@@ -313,7 +271,7 @@ class SIM800L:
             time = re.search('[0-9]{2}:[0-9]{2}:[0-9]{2}',txt).group()
             times = re.findall('[0-9]{2}',time)
             gmt = re.search('[+|-][0-9]{2}',txt).group()
-            return DateTime(date[2],date[1],date[0],times[2],times[1],times[0],gmt)
+            return TimeStamp(date[2],date[1],date[0],times[2],times[1],times[0],gmt)
         else:
             raise Exception('CCLK Inappropiate response: ' + txt)
         
@@ -345,34 +303,19 @@ class SIM800L:
         self.transmit('AT+CCID')
         return self.receive()
     
-    def show_gsm_reg_stat(self): #TODO: rewrite it to return sth
+    def get_gsm_reg_stat(self):
         self.transmit('AT+CREG?')
         txt = self.receive()
         if txt.startswith('+CREG'):
             x = re.findall('[0-9]',txt)
-            if x[0] == '0':
-                print('not showing network registration data')
-            elif x[0] == '1':
-                print('showing registration network status')
-            elif x[0] == '2':
-                print('showing registration network status, location and cell ID')
+            if x[0] == '2':
                 y, z = re.findall('"[0-9A-F]*"',txt)
-                print('location code: 0x' + y.strip('"'))
-                print('cell ID      : 0x' + z.strip('"'))
-            if x[1] == '0':
-                print('not registered, ME not searching a new operator')
-            elif x[1] == '1':
-                print('registered, home network')
-            elif x[1] == '2':
-                print('not registered, but ME searching a new operator')
-            elif x[2] == '3':
-                print('registration denied')
-            elif x[3] == '4':
-                print('unknown status')
-            elif x[4] == '5':
-                print('registered, roaming')
+                y = y.strip('"')
+                z = z.strip('"')
+                return GSMRegData(x[0],x[1],y,z)
+            return GSMRegData(x[0],x[1])
         else:
             raise Exception('CREG Inappropiate response: ' + txt)
         
 sim800 = SIM800L()
-print(sim800.wait('2'))
+print(sim800.get_gsm_reg_stat())
