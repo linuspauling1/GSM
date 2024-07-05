@@ -1,11 +1,3 @@
-'''
-TODO: factor Exception(...Inappropiate...)
-TODO: factor serial availability check
-TODO: RAII wrapper for ser
-TODO: unicode/emoji SMS support
-TODO: create phone agenda?
-'''
-
 from time import sleep
 from timestamp import TimeStamp
 from sms import SMS
@@ -18,9 +10,8 @@ ctrlZ = chr(26)
 sms_max_length = 160
 
 class SIM800L:
-    def __init__(self, lock=None, port = '/dev/ttyS0',baudrate=115200, timeout=.2): #TODO: implement thread locks
+    def __init__(self, port = '/dev/ttyS0',baudrate=115200, timeout=.2): #TODO: implement thread locks
         self.ser = serial.Serial(port=port,baudrate=baudrate,timeout=timeout)
-        self.lock = lock
 
     def transmit(self, cmd: str):
         cmd_enc = (cmd + '\n').encode()
@@ -31,7 +22,7 @@ class SIM800L:
         res_enc = self.ser.readline()[:-2]
         return res_enc.decode()
 
-    def check_at(self):
+    def is_at_ok(self):
         self.transmit('AT')
         if self.receive() == 'OK':
             return True
@@ -40,7 +31,7 @@ class SIM800L:
     def wait(self, delay: str):
         self.transmit('WAIT'+delay)
 
-    def get_rssi(self):
+    def get_signal_quality(self):
         self.transmit('AT+CSQ')
         resp = self.receive()
         if resp.startswith('+CSQ'):
@@ -68,7 +59,7 @@ class SIM800L:
     def hangup(self):
         self.transmit('ATH')
 
-    def dial_last_no(self):
+    def dial_last_number(self):
         self.transmit('ATDL')
 
     def dial(self, number: str):
@@ -107,7 +98,7 @@ class SIM800L:
         else:
             self.transmit('AT+CSDH=0')
 
-    def show_ser_async_data(self): #TODO: rewrite to return something
+    def show_ser_async_data(self): # TODO: rewrite to return something
         if not self.is_show_sms_params(): # TODO: moved in an init method
             self.set_show_sms_params()
         call_status_map = {
@@ -119,7 +110,7 @@ class SIM800L:
             if self.ser.in_waiting > 1:
                 resp = self.receive()
                 if resp in call_status_map:
-                    print(call_status_map[resp])
+                    print(call_status_map[resp]) # TODO: get rid of this
                 elif resp.startswith('+CMT'):
                     x = re.findall('[^,]+',resp[len('+CMT: '):])
                     x = [i.strip('"') for i in x]
