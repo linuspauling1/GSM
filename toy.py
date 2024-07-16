@@ -52,6 +52,8 @@ def initialize_gsm():
     transmit_cmd('at+cmgf=1')
     #show SMS params, like time
     transmit_cmd('at+csdh=1')
+    #show the incoming call parameters like caller number
+    transmit_cmd('at+clip=1')
 
 def send_sms(text, number):
     ctrl_Z = chr(26)
@@ -70,15 +72,37 @@ def read_data():
             hour = re.search(r'[0-9]{2}:[0-9]{2}:[0-9]{2}',moment).group()
             print(f'\nFrom {caller[3:-1]} at date {calendar} and hour {hour} was sent the message:')
             print(receive_cmd())
-            print('Message content: ',end='',flush=True)
+            print('Select service (a-answer, c-call, h-hang, m-message): ',end='',flush=True)
+        elif msg.startswith('+CLIP: '):
+            caller_number = re.search(r'"\+?[0-9]*"',msg).group()
+            print(f'\n{caller_number} is trying to reach you    ',end='',flush=True)
+        elif msg == 'NO CARRIER':
+            print('\nCall ended')
+            print('Select service (a-answer, c-call, h-hang, m-message, n-set/view callee number): ',end='',flush=True)
+        elif msg == 'BUSY':
+            print('\nCall rejected')
+            print('Select service (a-answer, c-call, h-hang, m-message, n-set/view callee number): ',end='',flush=True)
     else:
         sleep(.1)
 
 def user_action_listener():
     number = '0744604883'
     while True:
-        text = input('Message content: ')
-        send_sms(text=text,number=number)
+        text = input('Select service (a-answer, c-call, h-hang, m-message, n-set/view callee number): ')
+        if text == 'a':
+            transmit_cmd('ata')
+        elif text == 'c':
+            transmit_cmd('atd' + number + ';')
+        elif text == 'h':
+            transmit_cmd('ath')
+        elif text == 'm':
+            sms = input('Please, provide SMS content: ')
+            send_sms(text=sms,number=number)
+        elif text == 'n':
+            print(f'The current callee number is {number}')
+            number = input('Please, provide the new callee number: ')
+        else:
+            print('Wrong command!')
 
 def incoming_data_listener():
     while True:
