@@ -57,8 +57,8 @@ def receiver():
                 sleep(.1)
 
 def transmitter():
+    peer = '0744604883'
     while True:
-        peer = '0744604883'
         x = input('''
             V - see current recipient\'s number
             N - change current recipient\'s number
